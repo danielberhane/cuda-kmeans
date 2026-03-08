@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+cuda_kmeans
+*.o
+gmon.out
+
+# Output files
+*.cluster_centres
+*.membership
+
+# Editor files
+*~
+\#*\#
+*.swp
+*.swo
