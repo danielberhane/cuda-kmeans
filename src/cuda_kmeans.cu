@@ -478,7 +478,8 @@ int cuda_kmeans (float **objects,  // in : [numObjs][numCoords]
 		 float threshold,
 		 int *membership,
 		 int *loop_iterations,
-		 float ***clusters_out)
+		 float ***clusters_out,
+		 kmeans_perf_t *perf)   /* may be NULL */
 
 {
   int i, j, loop=0;
@@ -589,72 +590,85 @@ int cuda_kmeans (float **objects,  // in : [numObjs][numCoords]
     the threshold is a value delta = numChanged/numObjects. The loop will run until threshold is less than delta
   */
 
-cudaEvent_t start, stop;
-cudaEventCreate(&start);
-cudaEventCreate(&stop);
+  /* ---- benchmark instrumentation ------------------------------------------
+     All three kernels are launched on the default stream, so they serialize
+     against each other without an explicit cudaDeviceSynchronize().  The two
+     blocking cudaMemcpy calls in the loop body provide the synchronization
+     points that surface any execution error.  Per-kernel cudaEvent timing is
+     compiled in only for the breakdown build, because the syncs it requires
+     serialize the pipeline and inflate the total.
+     ------------------------------------------------------------------------*/
+  double t_transfer = 0.0, t_xfer0;
+  float  acc_find = 0.0f, acc_reduce_coord = 0.0f, acc_reduce_changed = 0.0f;
+
+#ifdef BENCH_KERNEL_BREAKDOWN
+  cudaEvent_t k_start, k_stop;
+  float k_ms = 0.0f;
+  checkCuda(cudaEventCreate(&k_start));
+  checkCuda(cudaEventCreate(&k_stop));
+  #define KERNEL_TIME_BEGIN()   cudaEventRecord(k_start)
+  #define KERNEL_TIME_END(acc)  do {                              \
+      cudaEventRecord(k_stop);                                    \
+      cudaEventSynchronize(k_stop);                               \
+      cudaEventElapsedTime(&k_ms, k_start, k_stop);               \
+      (acc) += k_ms;                                              \
+  } while (0)
+#else
+  #define KERNEL_TIME_BEGIN()   do { } while (0)
+  #define KERNEL_TIME_END(acc)  do { (void)(acc); } while (0)
+#endif
+
+  /* Hoisted out of the convergence loop: these were previously malloc'd on
+     every iteration and never freed.                                        */
+  int   *cluster_count = (int *)   malloc(numClusters * sizeof(int));
+  float *coord_sum     = (float *) malloc(numCoords * numClusters * sizeof(float));
+  assert(cluster_count != NULL && coord_sum != NULL);
+
+  const double t_loop_start = wtime();
+
   do {
 
     loop++;
-    checkCuda(cudaMemcpy(deviceClusters, dimClusters[0], numClusters*numCoords*sizeof(float), cudaMemcpyHostToDevice));
 
-          cudaEventRecord(start);
+    t_xfer0 = wtime();
+    checkCuda(cudaMemcpy(deviceClusters, dimClusters[0], numClusters*numCoords*sizeof(float), cudaMemcpyHostToDevice));
+    t_transfer += wtime() - t_xfer0;
+
+    KERNEL_TIME_BEGIN();
     find_nearest_cluster<<<numClusterBlocks, numThreadsPerClusterBlock, clusterBlockSharedDataSize>>>
       (numCoords, numObjs, numClusters, deviceObjects, deviceClusters, deviceMembership, deviceIntermediates, dev_sum_clusters, dev_sum_coords);
+    KERNEL_TIME_END(acc_find);
+    checkLastCudaError();   /* launch errors; execution errors surface at the memcpy below */
 
-              cudaEventRecord(stop);
-      cudaEventSynchronize(stop);
-      float milliseconds = 0;
-      cudaEventElapsedTime(&milliseconds, start, stop);
-      printf ("time1 %f\n", milliseconds);
-      cudaDeviceSynchronize();
-      checkLastCudaError();
-
-
-          cudaEventRecord(start);
-      reduce_cluster_changed<<<1, numReductionThreads, reductionBlockSharedDataSize >>>
+    KERNEL_TIME_BEGIN();
+    reduce_cluster_changed<<<1, numReductionThreads, reductionBlockSharedDataSize >>>
       (deviceIntermediates, numClusterBlocks, numReductionThreads);
-       cudaEventRecord(stop);
-      cudaEventSynchronize(stop);
-      milliseconds = 0;
-      cudaEventElapsedTime(&milliseconds, start, stop);
-      printf ("time2 %f\n", milliseconds);
-
-    cudaDeviceSynchronize();
+    KERNEL_TIME_END(acc_reduce_changed);
     checkLastCudaError();
 
     int d;
 
+    t_xfer0 = wtime();
     checkCuda(cudaMemcpy(&d , deviceIntermediates, sizeof(int), cudaMemcpyDeviceToHost));
+    t_transfer += wtime() - t_xfer0;
 
-
-    delta = (float)d; // delta is now the sum of changed clusters    
+    delta = (float)d; // delta is now the sum of changed clusters
 
 
     delta /= numObjs;  // delta = sum of changed clusters / num of objects
-    
-    
 
-          cudaEventRecord(start);
+
+
+    KERNEL_TIME_BEGIN();
     reduce_coord_clusters <<<numClusterBlocks, numThreadsPerClusterBlock, shared_reducer>>>
       (numCoords, numClusters, dev_sum_clusters, dev_sum_coords, final_sum_clusters, final_sum_coords, dev_num_reduce_clusters);
-
-            cudaEventRecord(stop);
-      cudaEventSynchronize(stop);
-      milliseconds = 0;
-      cudaEventElapsedTime(&milliseconds, start, stop);
-      printf ("time3 %f\n", milliseconds);
-
-    cudaDeviceSynchronize();
+    KERNEL_TIME_END(acc_reduce_coord);
     checkLastCudaError();
 
-    int * cluster_count;
-    float * coord_sum;
-    
-    cluster_count = (int *) malloc(numClusters*sizeof(int));
+    t_xfer0 = wtime();
     checkCuda(cudaMemcpy(cluster_count, final_sum_clusters, numClusters*sizeof(int), cudaMemcpyDeviceToHost));
-    
-    coord_sum = (float *) malloc (numCoords * numClusters * sizeof(float));
     checkCuda(cudaMemcpy(coord_sum, final_sum_coords, numCoords * numClusters * sizeof(float), cudaMemcpyDeviceToHost));
+    t_transfer += wtime() - t_xfer0;
 
     for (int i=0; i<numClusters; i++) {
       for (int j=0; j<numCoords; j++) {
@@ -678,6 +692,34 @@ cudaEventCreate(&stop);
     
   } while ((delta > threshold) && (loop < 500));
 
+  const double t_loop_sec = wtime() - t_loop_start;
+
+  free(cluster_count);
+  free(coord_sum);
+
+#ifdef BENCH_KERNEL_BREAKDOWN
+  checkCuda(cudaEventDestroy(k_start));
+  checkCuda(cudaEventDestroy(k_stop));
+#endif
+
+  if (loop_iterations != NULL) *loop_iterations = loop;
+
+  if (perf != NULL) {
+    perf->iterations         = loop;
+    perf->clustering_sec     = t_loop_sec;
+    perf->transfer_sec       = t_transfer;
+    perf->find_nearest_ms    = acc_find;
+    perf->reduce_coord_ms    = acc_reduce_coord;
+    perf->reduce_changed_ms  = acc_reduce_changed;
+    perf->num_blocks         = (int) numClusterBlocks;
+    perf->threads_per_block  = (int) numThreadsPerClusterBlock;
+    perf->reduction_threads  = (int) numReductionThreads;
+    perf->shared_bytes       = (size_t) clusterBlockSharedDataSize;
+    perf->sm_count           = deviceProp.multiProcessorCount;
+    perf->cc_major           = deviceProp.major;
+    perf->cc_minor           = deviceProp.minor;
+    snprintf(perf->gpu_name, sizeof(perf->gpu_name), "%s", deviceProp.name);
+  }
 
   checkCuda(cudaMemcpy(membership, deviceMembership, numObjs*sizeof(int), cudaMemcpyDeviceToHost));
 
@@ -687,6 +729,9 @@ cudaEventCreate(&stop);
   checkCuda(cudaFree(deviceIntermediates));
   checkCuda(cudaFree(dev_sum_coords));
   checkCuda(cudaFree(dev_sum_clusters));
+  checkCuda(cudaFree(final_sum_clusters));
+  checkCuda(cudaFree(final_sum_coords));
+  checkCuda(cudaFree(dev_num_reduce_clusters));
     
   free(dimObjects[0]);
   free(dimObjects);

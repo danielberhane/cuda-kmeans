@@ -64,7 +64,39 @@ inline void checkLastCudaError() {
 }
 #endif
 
-int cuda_kmeans(float**, int, int, int, float, int*, int*, float***);
+/* -----------------------------------------------------------------------------
+ * Benchmark instrumentation.
+ *
+ * Filled in by cuda_kmeans().  Kernel breakdown fields are only populated when
+ * built with -DBENCH_KERNEL_BREAKDOWN, because the per-kernel cudaEvent syncs
+ * needed to measure them serialize the pipeline and inflate the total.  The
+ * headline number always comes from a clean build.
+ * ---------------------------------------------------------------------------*/
+typedef struct {
+    int    iterations;            /* loops until delta <= threshold           */
+    double clustering_sec;        /* whole convergence loop, wall clock       */
+    double transfer_sec;          /* H2D + D2H performed inside the loop      */
+
+    /* zero unless BENCH_KERNEL_BREAKDOWN */
+    float  find_nearest_ms;       /* accumulated over all iterations          */
+    float  reduce_coord_ms;
+    float  reduce_changed_ms;
+
+    /* launch geometry, so the reported numbers are self-describing */
+    int    num_blocks;
+    int    threads_per_block;
+    int    reduction_threads;
+    size_t shared_bytes;
+
+    /* device identity */
+    char   gpu_name[256];
+    int    sm_count;
+    int    cc_major;
+    int    cc_minor;
+} kmeans_perf_t;
+
+int cuda_kmeans(float**, int, int, int, float, int*, int*, float***,
+                kmeans_perf_t*);
 float** file_read(char*, int*, int*);
 int     file_write(char*, int, int, int, float**, int*);
 double  wtime(void);
