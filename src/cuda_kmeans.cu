@@ -78,6 +78,13 @@ __global__ static void find_nearest_cluster(int numCoords,
 
   s_memb_changed[threadIdx.x] = 0;
 
+  /* Every thread must publish a membership value. The per-block cluster sums
+     below are built by scanning s_membership across the whole block, so any
+     slot left unwritten contributes uninitialised shared memory to the sums.
+     0xFF is a sentinel that matches no cluster id, covering the tail block
+     where idx >= numObjs. */
+  s_membership[threadIdx.x] = 0xFF;
+
   int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
    
@@ -147,9 +154,14 @@ __global__ static void find_nearest_cluster(int numCoords,
     }
 
     if (idx < numObjs) {
+      /* Unconditional: the sums below need this thread's cluster whether or
+	 not it changed. The original assigned it only on a change, which is
+	 every point on iteration 1 and almost none afterwards -- so from
+	 iteration 2 the centroids were computed from stale shared memory. */
+      s_membership[threadIdx.x] = (unsigned char) index;
+
       if (membership[idx] != index) {
 	s_memb_changed[threadIdx.x] = (unsigned char)1;
-	s_membership[threadIdx.x] = index;
 	membership[idx] = index;
       }
       //  printf("membership %d block %d thread %d\n", membership[idx], blockIdx.x, threadIdx.x);
