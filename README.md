@@ -79,91 +79,68 @@ per-iteration kernel time to move 0.5% of the bytes**. It launches as
 other one on the device sits idle. Parallelising that reduction across blocks is the
 clearest available improvement.
 
-> ⚠️ Kernel 1's stated 6 GB/s does not follow from its own inputs, which give
-> 7.61 GB/s. Kernels 2 and 3 both reproduce exactly. Treat the kernel 1 figure as
-> unverified pending a re-run — see [`presentation/BENCHMARKS.md`](presentation/BENCHMARKS.md).
+⚠️ Kernel 1's stated 6 GB/s does not follow from its own inputs, which give 7.61 GB/s;
+kernels 2 and 3 both reproduce exactly. Treat it as unverified — see
+[`presentation/BENCHMARKS.md`](presentation/BENCHMARKS.md).
 
 ---
 
 ## How it works
 
-K-means partitions N points into K clusters by repeatedly assigning each point to its
-nearest centroid, then moving each centroid to the mean of its members, until fewer
-than `threshold` of the points change cluster.
+K-means assigns each point to its nearest centroid, moves each centroid to the mean of
+its members, and repeats until fewer than `threshold` of the points change cluster.
+Three kernels per iteration, in launch order:
 
-Both steps are parallelised across three kernels, launched in this order every
-iteration:
+1. **`find_nearest_cluster`** — one thread per point; finds the nearest centroid and
+   accumulates per-block coordinate sums in shared memory, so each block emits a
+   partial result instead of contending on global memory.
+2. **`reduce_cluster_changed`** — counts how many points moved, for the convergence test.
+3. **`reduce_coord_clusters`** — reduces the per-block partials into global sums.
 
-**1. `find_nearest_cluster`** — one thread per point. Computes the nearest centroid and
-accumulates per-block coordinate sums in shared memory, so each block emits a partial
-result rather than contending on global memory.
+The host transposes the data from `[N][D]` to `[D][N]` **once** before upload, turning
+each warp's reads of a coordinate into a contiguous, coalesced access rather than a
+strided one. That is the most consequential layout decision in the implementation.
 
-**2. `reduce_cluster_changed`** — counts how many points changed cluster this iteration,
-to test convergence.
-
-**3. `reduce_coord_clusters`** — reduces the per-block partial sums across all blocks
-into the global coordinate sums and per-cluster counts.
-
-The host transposes the data from `[N][D]` to `[D][N]` **once**, before upload. That
-turns each warp's reads of a coordinate into a contiguous, coalesced access instead of
-a strided one — the single most important layout decision in the implementation.
-
-Centroid division and the convergence test happen on the host, so each iteration
-includes blocking device-to-host copies. Note where the first one falls: δ is copied
-back **between the second and third kernels**, so the host stall interrupts the
-pipeline rather than following it. That serialisation is what the K=2 results above
-are measuring.
+Centroid division and the convergence test run on the host, so δ is copied back
+**between the second and third kernels** — the stall interrupts the pipeline rather
+than following it. That serialisation is what the K=2 results above are measuring.
 
 ### Launch geometry
 
 For `data/points_3d.txt` (99,968 points, D=3) at K=4:
 
 ```
-grid              781 blocks × 128 threads      ceil(99968 / 128)
-reduction kernel  1 block × 1024 threads        nextPowerOfTwo(781)
-shared memory     1,904 bytes per block
-iterations        31                            threshold = 0.001
+grid              781 blocks × 128 threads       ceil(99968 / 128)
+reduction kernel  1 block × 1024 threads         nextPowerOfTwo(781)
+shared memory     1,904 bytes per block          s_objects 1,536 · s_clusters 48
+                                                 s_sum_clusters 16 · s_sum_coords 48
+                                                 s_memb_changed 128 · s_membership 128
+iterations        31                             threshold = 0.001
 ```
 
-Shared memory is packed by hand into six regions from a single `extern __shared__`
-allocation:
-
-| Region | Purpose | Bytes |
-|--------|---------|-------|
-| `s_objects`        | the block's tile of points     | 1,536 |
-| `s_clusters`       | all centroids                  | 48 |
-| `s_sum_clusters`   | per-cluster membership counts  | 16 |
-| `s_sum_coords`     | per-cluster coordinate sums    | 48 |
-| `s_memb_changed`   | per-thread changed flags       | 128 |
-| `s_membership`     | per-thread assignment          | 128 |
-| | **total** | **1,904** |
-
----
+Those six regions are carved out of a single `extern __shared__` allocation by pointer
+arithmetic, and are drawn to scale in the diagram above.
 
 ## Build and usage
 
 Requires the NVIDIA CUDA Toolkit and a CUDA-capable GPU.
 
 ```bash
-make                              # the main executable
-make GENCODE="-arch=sm_80"        # name the architecture for anything you benchmark
-make cuda_kmeans_bench            # instrumented build, per-kernel timings
-make bench-tools                  # CPU baseline + data generator (no CUDA needed)
+make                          # main executable
+make GENCODE="-arch=sm_80"    # name the architecture for anything you benchmark
+make cuda_kmeans_bench        # instrumented build, per-kernel timings
+make bench-tools              # CPU baseline + data generator (no CUDA needed)
+
+./cuda_kmeans <num_clusters> <num_dimensions> <num_points> <threshold> <input_file> [--csv]
+./cuda_kmeans 4 3 99968 0.001 data/points_3d.txt
 ```
 
 `GENCODE` is empty by default so `make` works anywhere, including a login node with no
 GPU, but nvcc then targets its own default and relies on PTX JIT. Use `sm_80` for A100,
-`sm_70` for V100, or `native` to match the GPU in the machine you are building on.
+`sm_70` for V100, or `native` to match the local GPU.
 
-```bash
-./cuda_kmeans <num_clusters> <num_dimensions> <num_points> <threshold> <input_file> [--csv]
-
-./cuda_kmeans 4 3 99968 0.001 data/points_3d.txt
-```
-
-Input is one point per line, first column an ignored id, the rest coordinates. Output is
-`<input>.cluster_centres` and `<input>.membership` alongside the input; `--csv` emits a
-single machine-readable row instead and skips writing them.
+Writes `<input>.cluster_centres` and `<input>.membership` alongside the input; `--csv`
+emits one machine-readable row instead and skips writing them.
 
 The bundled datasets contain **no cluster structure** — they measure throughput, not
 clustering quality.
@@ -196,65 +173,23 @@ computed from them is meaningless. That gate is what caught the bug described ab
 See [`bench/README.md`](bench/README.md) for the CPU baseline's semantics, the cluster
 settings, and how the diagram is regenerated.
 
-## Project structure
-
-<details><summary>Directory layout (click)</summary>
-
-```
-├── src/
-│   ├── cuda_kmeans.cu    # the three kernels and the host convergence loop
-│   ├── cuda_main.cu      # driver
-│   ├── cuda_io.cu        # file I/O
-│   ├── cuda_wtime.cu     # wall-clock timer
-│   └── kmeans.h          # shared header, perf struct, utility macros
-├── bench/
-│   ├── seq_kmeans.c      # semantics-matched CPU baseline
-│   ├── gen_points.c      # deterministic generator for scaling studies
-│   └── run_bench.slurm   # benchmark sweep
-├── docs/                 # the interactive demo (GitHub Pages)
-│   ├── engine.js         # the algorithm, shared with the tools below
-│   ├── worker.js         # traces run off the main thread
-│   └── app.js            # canvas rendering and controls
-├── tools/
-│   ├── kmeans-engine.mjs      # Node wrapper over docs/engine.js
-│   ├── verify-trace.mjs       # asserts it matches the measured values
-│   ├── make-pipeline-svg.mjs  # generates the diagram above from a real run
-│   └── make-demo-data.mjs     # packs the dataset for the browser
-├── assets/pipeline.svg   # the animated execution-model diagram
-├── data/                 # 99,968 points at 1, 3 and 10 dimensions
-├── presentation/
-│   ├── k-means-cuda-2015.pptx
-│   ├── BENCHMARKS.md              # figures above, transcribed with caveats
-│   ├── kernel-design-notes.txt    # original 2015 kernel design note
-│   └── figures/
-├── Makefile
-└── LICENSE
-```
-</details>
-
-## Provenance
+## Provenance and attribution
 
 Written in 2015 as a graduate project in the Department of Electrical and Computer
-Engineering at George Mason University, and run on GMU's Hopper HPC cluster. The
-benchmark figures above are from the original presentation; the hardware they were
-measured on was not recorded, which is one of several gaps
-[`bench/run_bench.slurm`](bench/run_bench.slurm) is designed to close on a re-run.
+Engineering at Western University. The benchmark figures above are from the original
+presentation; the hardware they were measured on was not recorded, which is one of
+several gaps [`bench/run_bench.slurm`](bench/run_bench.slurm) closes on a re-run.
 
-## Acknowledgments
+The CUDA kernels in `src/cuda_kmeans.cu`, the host driver and the benchmark harness in
+`bench/` were written by **Daniel Berhane Araya**.
+[`presentation/kernel-design-notes.txt`](presentation/kernel-design-notes.txt) is the
+original 2015 design note.
 
 The I/O utilities (`cuda_io.cu`, `cuda_wtime.cu`), header (`kmeans.h`) and original
-Makefile structure are based on code by **Wei-keng Liao** (Northwestern University)
-and **Serban Giuroiu**, released under the MIT License.
-
-The MPI, OpenMP, sequential and reference-CUDA implementations used as comparison
-baselines in the charts above are from that same package. They are not vendored here —
-only the measurements taken against them are reproduced.
-
-The CUDA kernels in `src/cuda_kmeans.cu`, the host driver, and the benchmark harness
-in `bench/` were written by **Daniel Berhane Araya**.
-[`presentation/kernel-design-notes.txt`](presentation/kernel-design-notes.txt) is the
-original 2015 design note describing each kernel's inputs, outputs and shared-memory
-layout.
+Makefile structure are based on code by **Wei-keng Liao** (Northwestern University) and
+**Serban Giuroiu**, MIT-licensed. The MPI, OpenMP, sequential and reference-CUDA
+implementations used as comparison baselines in the charts are from that same package;
+they are not vendored here, only the measurements taken against them are reproduced.
 
 ## License
 

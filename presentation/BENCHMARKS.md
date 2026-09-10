@@ -1,7 +1,7 @@
 # Benchmarks from the original 2015 presentation
 
-Transcribed from `k-means-cuda-2015.pptx` (Daniel Berhane, 3 May 2015, GMU
-Department of Electrical and Computer Engineering). Figures extracted to
+Transcribed from `k-means-cuda-2015.pptx` (Daniel Berhane, 3 May 2015, Western
+University, Department of Electrical and Computer Engineering). Figures extracted to
 `figures/`.
 
 The slides report figures only as charts -- the deck contains no embedded
