@@ -88,8 +88,13 @@ int main(int argc, char **argv) {
         clustering_timing = timing - clustering_timing;
     }
 
-file_write(filename, numClusters, numObjs, numCoords, clusters,
-               membership);
+    /* Benchmark sweeps run this hundreds of times; writing two files of
+       numObjs lines on each run would dominate the wall clock and litter the
+       data directory. */
+    if (!emit_csv) {
+        file_write(filename, numClusters, numObjs, numCoords, clusters,
+                   membership);
+    }
 
     free(membership);
     free(clusters[0]);
@@ -99,10 +104,10 @@ file_write(filename, numClusters, numObjs, numCoords, clusters,
 
     if (emit_csv) {
         /* Column order must match bench/run_bench.slurm's header line. */
-        printf("%s,%d,%d,%d,%g,%d,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%d,%d,%d,%zu,\"%s\",%d,%d.%d\n",
+        printf("%s,%d,%d,%d,%g,%d,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%d,%d,%d,%zu,\"%s\",%d,%d.%d\n",
                filename, numObjs, numCoords, numClusters, threshold,
                perf.iterations,
-               perf.clustering_sec, perf.transfer_sec, io_timing,
+               perf.clustering_sec, perf.transfer_sec, clustering_timing, io_timing,
                perf.find_nearest_ms, perf.reduce_coord_ms, perf.reduce_changed_ms,
                perf.num_blocks, perf.threads_per_block, perf.reduction_threads,
                perf.shared_bytes,
@@ -124,8 +129,10 @@ file_write(filename, numClusters, numObjs, numCoords, clusters,
                perf.gpu_name, perf.sm_count, perf.cc_major, perf.cc_minor);
         printf("\n");
         printf("I/O time         = %10.4f sec\n", io_timing);
-        printf("Clustering time  = %10.4f sec\n", perf.clustering_sec);
+        printf("Clustering time  = %10.4f sec  (convergence loop)\n", perf.clustering_sec);
         printf("  of which H2D/D2H %10.4f sec\n", perf.transfer_sec);
+        printf("End-to-end GPU   = %10.4f sec  (incl. alloc, transpose, teardown)\n",
+               clustering_timing);
 #ifdef BENCH_KERNEL_BREAKDOWN
         printf("\n  per-kernel totals (breakdown build; syncs inflate the total)\n");
         printf("  find_nearest_cluster   = %10.4f ms\n", perf.find_nearest_ms);
