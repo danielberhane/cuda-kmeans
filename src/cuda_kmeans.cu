@@ -158,23 +158,29 @@ __global__ static void find_nearest_cluster(int numCoords,
   }
   __syncthreads(); // for s_memb_changed - MOVED OUTSIDE IF
     
-  for (unsigned int s=blockDim.x/2; s>32; s>>=1) {
-    if (threadIdx.x < s) 
-      s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + s];
-      __syncthreads();
-      
+  /* Tree reduction over s_memb_changed.
 
-      if (threadIdx.x < 32) {
-      	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 32];
-	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 16];
-	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 8];
-	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 4];
-	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 2];
-	 s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + 1];
-      
-      }
-      
-    }
+     The original unrolled the final warp (+32,+16,+8,+4,+2,+1) with no
+     synchronisation between steps and no volatile qualifier. That was valid
+     under the warp-synchronous execution every NVIDIA GPU guaranteed through
+     Pascal, and this code was written against that guarantee in 2015.
+
+     Volta (2017) introduced independent thread scheduling: threads in a warp
+     no longer advance in lockstep, and without volatile the compiler may keep
+     the accumulator in a register across those adds. On sm_70 and later the
+     adds race, updates are lost, and the change count comes out too low --
+     which makes delta too small and the convergence loop exit early.
+
+     Synchronising at every step is correct on all architectures. The extra
+     __syncthreads() calls are irrelevant beside the per-iteration launch and
+     transfer latency this kernel already pays.
+
+     Note the reduction also assumes blockDim.x is a power of two. */
+  for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s)
+      s_memb_changed[threadIdx.x] += s_memb_changed[threadIdx.x + s];
+    __syncthreads();
+  }
 
   if (threadIdx.x == 0) {
     intermediates[blockIdx.x] = s_memb_changed[0];
@@ -295,22 +301,13 @@ __global__ static void reduce_coord_clusters(int numCoords,
       so that parallel reduction can be done  
     */
 
-    for (unsigned int s = blockDim.x; s>32; s >>=1) {
+    for (unsigned int s = blockDim.x; s > 0; s >>=1) {
       if (threadIdx.x < s) 
 	s_clusters[threadIdx.x] += s_clusters[threadIdx.x + s];
 	
       __syncthreads(); // for reduction
     }
 
-    if (threadIdx.x < 32) {
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 32];
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 16];
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 8];
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 4];
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 2];
-       s_clusters[threadIdx.x] += s_clusters[threadIdx.x + 1];
-    
-    }
 
 
 
@@ -356,24 +353,13 @@ __global__ static void reduce_coord_clusters(int numCoords,
 	
 	// Reduce the coordinate and add the sum to the correstponding array
 	  
-	for (unsigned int s = blockDim.x; s>32; s >>=1) {
+	for (unsigned int s = blockDim.x; s > 0; s >>=1) {
 	  if (threadIdx.x < s) 
 	    s_coords[threadIdx.x] += s_coords[threadIdx.x + s];
 	     
 	  __syncthreads();
 	}
 
-	if (threadIdx.x < 32) {
-	       s_coords[threadIdx.x] += s_coords[threadIdx.x + 32];
-	           s_coords[threadIdx.x] += s_coords[threadIdx.x + 16];
-		       s_coords[threadIdx.x] += s_coords[threadIdx.x + 8];
-		           s_coords[threadIdx.x] += s_coords[threadIdx.x + 4];
-			       s_coords[threadIdx.x] += s_coords[threadIdx.x + 2];
-			           s_coords[threadIdx.x] += s_coords[threadIdx.x + 1];
-	
-
-
-	}
 	
 
 
@@ -430,29 +416,27 @@ __global__ static void reduce_cluster_changed (int *deviceIntermediates,
   extern __shared__ unsigned int intermediates[];
 
   
-  intermediates[threadIdx.x] = (threadIdx.x < numIntermediates) ? deviceIntermediates[threadIdx.x] : 0;
+  /* Each thread folds in a strided slice of the partials first, so this works
+     for any numIntermediates. The original mapped one thread to one partial,
+     which required blockDim.x >= numIntermediates; past 1024 blocks (N > 131,072)
+     that exceeds the hardware limit and the launch fails with CUDA error 9.
+     The comment above this kernel predicted exactly that. */
+  unsigned int acc = 0;
+  for (unsigned int i = threadIdx.x; i < numIntermediates; i += blockDim.x)
+      acc += deviceIntermediates[i];
+  intermediates[threadIdx.x] = acc;
 
   __syncthreads();
 
   // numIntermediates2 have to be a power of two
 
-  for (unsigned int s = numIntermediates2/2; s>32; s>>=1) {
+  for (unsigned int s = numIntermediates2/2; s > 0; s>>=1) {
     if (threadIdx.x < s) 
       intermediates[threadIdx.x] += intermediates[threadIdx.x + s];
     
     __syncthreads();
   }
 
-  if (threadIdx.x < 32) {
-        intermediates[threadIdx.x] += intermediates[threadIdx.x + 32];
-	   intermediates[threadIdx.x] += intermediates[threadIdx.x + 16];
-	      intermediates[threadIdx.x] += intermediates[threadIdx.x + 8];
-	         intermediates[threadIdx.x] += intermediates[threadIdx.x + 4];
-		    intermediates[threadIdx.x] += intermediates[threadIdx.x + 2];
-		       intermediates[threadIdx.x] += intermediates[threadIdx.x + 1];
-		       
-
-  }
 
 
 
@@ -465,7 +449,6 @@ __global__ static void reduce_cluster_changed (int *deviceIntermediates,
   
   if (threadIdx.x == 0) {
     deviceIntermediates[0] = intermediates[0];
-    printf("\n");
     // printf("Sum of Changed clusters %d\n", deviceIntermediates[0]);
   }
 
@@ -553,8 +536,10 @@ int cuda_kmeans (float **objects,  // in : [numObjs][numCoords]
   // printf("Asked for %u\n", clusterBlockSharedDataSize);
   // printf("Available %lu\n", deviceProp.sharedMemPerBlock);
 
-  const unsigned int numReductionThreads =
-    nextPowerOfTwo(numClusterBlocks);
+  /* Capped at the 1024 threads/block hardware limit. reduce_cluster_changed
+     now folds strided slices, so it no longer needs one thread per partial. */
+  unsigned int numReductionThreads = nextPowerOfTwo(numClusterBlocks);
+  if (numReductionThreads > 1024) numReductionThreads = 1024;
   const unsigned int reductionBlockSharedDataSize =
     numReductionThreads * sizeof(unsigned int);
 
