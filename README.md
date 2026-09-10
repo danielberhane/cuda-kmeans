@@ -140,95 +140,65 @@ allocation:
 
 ---
 
-## Build
+## Build and usage
 
 Requires the NVIDIA CUDA Toolkit and a CUDA-capable GPU.
 
 ```bash
-make                      # the main executable
-make cuda_kmeans_bench    # instrumented build, per-kernel timings
-make bench-tools          # CPU baseline + data generator (no CUDA needed)
-make clean
+make                              # the main executable
+make GENCODE="-arch=sm_80"        # name the architecture for anything you benchmark
+make cuda_kmeans_bench            # instrumented build, per-kernel timings
+make bench-tools                  # CPU baseline + data generator (no CUDA needed)
 ```
 
-`GENCODE` is empty by default, so `make` works anywhere — including a login node with
-no GPU — but nvcc then targets its own default and relies on PTX JIT. Name the
-architecture for anything you intend to benchmark:
-
-```bash
-make GENCODE="-arch=sm_80"     # A100
-make GENCODE="-arch=sm_70"     # V100
-make GENCODE="-arch=native"    # match this machine's GPU (needs a GPU present)
-```
-
-## Usage
+`GENCODE` is empty by default so `make` works anywhere, including a login node with no
+GPU, but nvcc then targets its own default and relies on PTX JIT. Use `sm_80` for A100,
+`sm_70` for V100, or `native` to match the GPU in the machine you are building on.
 
 ```bash
 ./cuda_kmeans <num_clusters> <num_dimensions> <num_points> <threshold> <input_file> [--csv]
-```
 
-```bash
 ./cuda_kmeans 4 3 99968 0.001 data/points_3d.txt
-./cuda_kmeans 4 10 99968 0.001 data/points_10d.txt
 ```
 
-**Input** — one point per line; the first column is an id and is ignored, the rest are
-coordinates:
+Input is one point per line, first column an ignored id, the rest coordinates. Output is
+`<input>.cluster_centres` and `<input>.membership` alongside the input; `--csv` emits a
+single machine-readable row instead and skips writing them.
 
-```
-1 61.015527 20.459306 32.295319
-2 63.265007 76.450910 14.535881
-```
+The bundled datasets contain **no cluster structure** — they measure throughput, not
+clustering quality.
 
-**Output** — two files next to the input: `<input>.cluster_centres` and
-`<input>.membership`. `--csv` emits a single machine-readable row instead and skips
-writing them, for benchmark sweeps.
+<details><summary>They are also not quite uniform — click</summary>
 
-Note that the bundled datasets contain **no cluster structure**. They exist to measure
-throughput, not clustering quality; k-means on them produces a Voronoi partition of the
-space rather than recovered structure.
-
-They are also not quite uniform. In `points_3d.txt`, dimensions 2 and 3 hold 99,968
-distinct values as expected, but dimension 1 draws from only **19,968** — the same value
-pool as `points_1d.txt` — and 288 of those values account for roughly 80% of all points,
-repeating between 191 and 418 times each. The
-[interactive demo](https://danielberhane.github.io/cuda-kmeans/) renders this as visible
-vertical banding.
+In `points_3d.txt`, dimensions 2 and 3 hold 99,968 distinct values as expected, but
+dimension 1 draws from only **19,968** — the same value pool as `points_1d.txt` — and
+288 of those values account for roughly 80% of all points, repeating between 191 and
+418 times each. The [interactive demo](https://danielberhane.github.io/cuda-kmeans/)
+renders this as visible vertical banding.
 
 This does not affect the timing results, which perform identical arithmetic either way,
-but it does mean the data should not be described as uniformly random.
+but the data should not be described as uniformly random.
+</details>
 
-## Re-running the benchmarks
+## Reproducing
 
 ```bash
 make bench-tools
-sbatch bench/run_bench.slurm      # edit the SBATCH placeholders first
+mkdir -p bench/results
+sbatch bench/run_bench.slurm
 ```
 
-The harness sweeps dimensionality × K across the bundled datasets plus an N-scaling
-series, takes the fastest of three runs, and **gates on the CPU and GPU builds
-converging in the same number of iterations** — if they diverge they are not doing the
-same work, and any speedup computed from them is meaningless.
+The harness sweeps dimensionality × K plus an N-scaling series, takes the fastest of
+three runs, and **gates on the CPU and GPU converging in the same number of
+iterations** — if they diverge they are not doing the same work, and any speedup
+computed from them is meaningless. That gate is what caught the bug described above.
 
-The diagram at the top is regenerated the same way, from the same algorithm:
-
-```bash
-node tools/verify-trace.mjs        # gate: 781 blocks, 1,904 B, 31 iterations, δ sequence
-node tools/make-pipeline-svg.mjs   # -> assets/pipeline.svg
-```
-
-`tools/verify-trace.mjs` exists so the diagram cannot drift into fiction. It asserts
-the engine reproduces every value measured from the real code — grid geometry, the
-shared-memory layout region by region, the iteration count, and the full δ sequence to
-five decimals — and checks that per-block counts sum to the global count on every
-iteration. If it fails, nothing generated from that engine should be published.
-
-`bench/seq_kmeans.c` is the CPU baseline. It matches this implementation exactly
-(first-K initialisation, squared float distance without `sqrt`, `delta = changed/N`
-convergence, 500-iteration cap) and is built at `-O3` with an optional OpenMP path, so
-the comparison is not against a strawman.
+See [`bench/README.md`](bench/README.md) for the CPU baseline's semantics, the cluster
+settings, and how the diagram is regenerated.
 
 ## Project structure
+
+<details><summary>Directory layout (click)</summary>
 
 ```
 ├── src/
@@ -260,6 +230,7 @@ the comparison is not against a strawman.
 ├── Makefile
 └── LICENSE
 ```
+</details>
 
 ## Provenance
 
