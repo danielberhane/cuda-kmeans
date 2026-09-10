@@ -49,12 +49,14 @@
   <div class="card">
     <h2>Points</h2>
     <p class="note">
-      Dimensions 1 and 2, coloured by cluster. The benchmark data has no clusters in it,
+      Coloured by cluster. The benchmark data has no clusters in it,
       so k-means partitions it into Voronoi cells rather than recovering structure — switch
       to <em>clustered</em> to see the difference. The vertical banding is real: dimension 1
       draws from only 19,968 distinct values, and 288 of them account for 80% of the points.
     </p>
+    <div class="axrow"><span class="axlab">Plot dimensions</span><span id="axes"></span></div>
     <canvas id="points"></canvas>
+    <p class="proj" id="proj"></p>
   </div>
 
   <div>

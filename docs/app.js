@@ -10,6 +10,7 @@ const worker = new Worker('worker.js', { type: 'module' });
 const state = {
   run: null, iter: 0, playing: false, lastTick: 0,
   params: { dataset: 'benchmark', K: 4, threshold: 0.001, blockSize: 128 },
+  axes: [0, 1],          // which two of the D dimensions the scatter plots
 };
 
 // ---- theme-aware palette, re-read whenever the theme changes ----------------
@@ -42,6 +43,20 @@ function fit(canvas) {
   return { ctx, w: r.width, h: r.height };
 }
 
+// Bounds are per-axis-pair, so they are recomputed whenever the selection changes.
+function computeBounds() {
+  const { coords, N, D } = state.run;
+  const [ax, ay] = state.axes;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const a = coords[i * D + ax], b = coords[i * D + ay];
+    if (a < x0) x0 = a; if (a > x1) x1 = a;
+    if (b < y0) y0 = b; if (b > y1) y1 = b;
+  }
+  const mx = (x1 - x0) * 0.02, my = (y1 - y0) * 0.02;
+  state.bounds = { x0: x0 - mx, x1: x1 + mx, y0: y0 - my, y1: y1 + my };
+}
+
 // ---- points -----------------------------------------------------------------
 // 99,968 individual arc() calls would be far too slow; write pixels directly.
 function drawPoints() {
@@ -51,6 +66,7 @@ function drawPoints() {
   if (!state.run) return;
 
   const { coords, N, D } = state.run;
+  const [ax, ay] = state.axes;
   const t = state.run.trace[state.iter];
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const img = ctx.createImageData(c.width, c.height);
@@ -70,8 +86,8 @@ function drawPoints() {
   const sx = (c.width - 2 * pad) / (B.x1 - B.x0);
   const sy = (c.height - 2 * pad) / (B.y1 - B.y0);
   for (let i = 0; i < N; i++) {
-    const x = pad + (coords[i * D] - B.x0) * sx;
-    const y = c.height - pad - (coords[i * D + 1] - B.y0) * sy;
+    const x = pad + (coords[i * D + ax] - B.x0) * sx;
+    const y = c.height - pad - (coords[i * D + ay] - B.y0) * sy;
     const xi = x | 0, yi = y | 0;
     if (xi < 0 || yi < 0 || xi >= c.width || yi >= c.height) continue;
     px[yi * c.width + xi] = rgba[t.membership[i] % rgba.length];
@@ -82,8 +98,8 @@ function drawPoints() {
   ctx.save();
   ctx.scale(1 / dpr, 1 / dpr);
   for (let k = 0; k < state.run.K; k++) {
-    const x = pad + (t.centroids[k * D] - B.x0) * sx;
-    const y = c.height - pad - (t.centroids[k * D + 1] - B.y0) * sy;
+    const x = pad + (t.centroids[k * D + ax] - B.x0) * sx;
+    const y = c.height - pad - (t.centroids[k * D + ay] - B.y0) * sy;
     ctx.beginPath(); ctx.arc(x, y, 6 * dpr, 0, 7);
     ctx.fillStyle = PAL.panel; ctx.fill();
     ctx.lineWidth = 2.5 * dpr; ctx.strokeStyle = PAL.clusters[k % PAL.clusters.length]; ctx.stroke();
@@ -158,6 +174,11 @@ function drawStats() {
   $('#s-sizes').textContent = t.counts.map((n) => fmt(Math.round(n))).join(' · ');
   $('#scrub').value = String(state.iter);
   $('#converged').hidden = state.iter !== r.trace.length - 1;
+  const [ax, ay] = state.axes;
+  const proj = $('#proj');
+  if (proj) proj.textContent = r.D > 2
+    ? `Showing dimensions ${ax + 1} and ${ay + 1} of ${r.D}. Any 2D view hides the rest, so two clusters separated only along a hidden dimension will appear to sit on top of each other — try the other pairs.`
+    : `Showing dimensions ${ax + 1} and ${ay + 1}.`;
 }
 
 function draw() { drawPoints(); drawGrid(); drawShared(); drawStats(); }
@@ -173,19 +194,12 @@ worker.onmessage = (e) => {
   const { type, payload } = e.data;
   if (type === 'loaded') {
     $('#s-n').textContent = `${fmt(payload.N)} × ${payload.D}D`;
+    buildAxisPicker(payload.D);
     requestRun();
   }
   if (type === 'result') {
     state.run = payload;
-    const { coords, N, D } = payload;
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i < N; i++) {
-      const a = coords[i * D], b = coords[i * D + 1];
-      if (a < x0) x0 = a; if (a > x1) x1 = a;
-      if (b < y0) y0 = b; if (b > y1) y1 = b;
-    }
-    const mx = (x1 - x0) * 0.02, my = (y1 - y0) * 0.02;
-    state.bounds = { x0: x0 - mx, x1: x1 + mx, y0: y0 - my, y1: y1 + my };
+    computeBounds();
     state.iter = 0;
     $('#scrub').max = String(payload.trace.length - 1);
     $('#s-time').textContent = `${payload.ms.toFixed(0)} ms`;
@@ -211,6 +225,26 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
+
+// Every 2D view of D-dimensional data hides D-2 axes, and two clusters separated
+// only along a hidden axis will sit on top of each other. Offering the other pairs
+// is the fix; the caption below the plot names the one being shown.
+function buildAxisPicker(D) {
+  const box = $('#axes');
+  if (!box) return;                       // never let a missing control break the page
+  if (D < 3) { box.closest('.axrow').hidden = true; return; }
+  const pairs = [];
+  for (let a = 0; a < D; a++) for (let b = a + 1; b < D; b++) pairs.push([a, b]);
+  box.innerHTML = pairs.slice(0, 6).map(([a, b], i) =>
+    `<button class="axbtn${i === 0 ? ' on' : ''}" data-a="${a}" data-b="${b}">${a + 1}×${b + 1}</button>`).join('');
+  box.querySelectorAll('.axbtn').forEach(btn => btn.addEventListener('click', () => {
+    box.querySelectorAll('.axbtn').forEach(x => x.classList.remove('on'));
+    btn.classList.add('on');
+    state.axes = [+btn.dataset.a, +btn.dataset.b];
+    computeBounds();
+    draw();
+  }));
+}
 
 // ---- controls ---------------------------------------------------------------
 function bind(id, key, parse = Number, after = requestRun) {
