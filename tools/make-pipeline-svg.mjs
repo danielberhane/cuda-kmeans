@@ -31,11 +31,31 @@ const COLS = 62, CELL = 10, GAP = 2, PITCH = CELL + GAP;
 const ROWS = Math.ceil(r.numBlocks / COLS);
 const GRID_W = COLS * PITCH - GAP, GRID_X = Math.round((W - GRID_W) / 2), GRID_Y = 200;
 
-// 0 is a distinct "idle" level; sqrt lifts low activity so it stays visible
-const level = v => (v === 0 ? 0 : Math.min(4, 1 + Math.floor(Math.sqrt(v / r.blockSize) * 4)));
+// Encoding. Per-block activity collapses ~40x over the run: every block changes
+// all 128 of its points on iteration 1, but by iteration 31 the busiest block
+// changes 3. A single absolute scale across that range pushes every late frame
+// into one colour, which is what the first version did -- it rendered 619 and 85
+// working blocks as an apparently blank grid.
+//
+// So: level 0 is absolute and means "this block did no work", and the active
+// blocks are scaled within their own frame. The convergence story is then told
+// by how much of the grid turns grey (0% -> 0% -> 21% -> 89% idle), while the
+// blocks still working stay legible. The caption states that the shading is
+// relative, and the absolute count is printed under every frame.
+const activeRange = frames.map(f => {
+  let lo = Infinity, hi = 0;
+  for (const v of f.blockChanged) if (v > 0) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  return { lo: lo === Infinity ? 0 : lo, hi };
+});
+const level = (v, fi) => {
+  if (v === 0) return 0;
+  const { lo, hi } = activeRange[fi];
+  if (hi === lo) return 4;                       // iteration 1: every block saturated
+  return Math.max(1, Math.min(4, 1 + Math.floor((v - lo) / (hi - lo) * 4)));
+};
 
 // Group cells by their level sequence so each distinct sequence needs one rule.
-const seqOf = b => frames.map(f => level(f.blockChanged[b])).join('');
+const seqOf = b => frames.map((f, fi) => level(f.blockChanged[b], fi)).join('');
 const seqs = new Map();
 const cells = [];
 for (let b = 0; b < r.numBlocks; b++) {
@@ -88,18 +108,18 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" wid
 <style>
   :root{
     --bg:#fbfbfa;--panel:#ffffff;--ink:#16171a;--dim:#6a6d73;--line:#dcdcd6;
-    --l0:#e7e7e1;--l1:#cfe0f2;--l2:#8fbde3;--l3:#4b8dc9;--l4:#1f5e9e;
-    --warn:#c2410c;--warnbg:#fdf1e7;--flow:#1f5e9e;--sm:#8fbde3;
+    --l0:#d6d6cd;--l1:#7fadd8;--l2:#5590c4;--l3:#34719f;--l4:#17548f;
+    --warn:#c2410c;--warnbg:#fdf1e7;--flow:#17548f;--sm:#5590c4;
   }
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
     --bg:#131519;--panel:#1b1e23;--ink:#e9e9e5;--dim:#9a9da4;--line:#2d3137;
-    --l0:#24282e;--l1:#1e3c56;--l2:#2f6d9f;--l3:#4d9ed6;--l4:#8ccbf4;
-    --warn:#f0a054;--warnbg:#2a2018;--flow:#4d9ed6;--sm:#2f6d9f;
+    --l0:#2b3138;--l1:#2f5f83;--l2:#3f8bbe;--l3:#5eaee0;--l4:#93d0f6;
+    --warn:#f0a054;--warnbg:#2a2018;--flow:#5eaee0;--sm:#3f8bbe;
   }}
   :root[data-theme="dark"]{
     --bg:#131519;--panel:#1b1e23;--ink:#e9e9e5;--dim:#9a9da4;--line:#2d3137;
-    --l0:#24282e;--l1:#1e3c56;--l2:#2f6d9f;--l3:#4d9ed6;--l4:#8ccbf4;
-    --warn:#f0a054;--warnbg:#2a2018;--flow:#4d9ed6;--sm:#2f6d9f;
+    --l0:#2b3138;--l1:#2f5f83;--l2:#3f8bbe;--l3:#5eaee0;--l4:#93d0f6;
+    --warn:#f0a054;--warnbg:#2a2018;--flow:#5eaee0;--sm:#3f8bbe;
   }
   text{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fill:var(--ink)}
   .h1{font-size:16px;font-weight:650}
@@ -158,10 +178,10 @@ ${FRAMES.map((f, i) => frameText(i, 'mono', W - 60, 40, 'end',
 <text class="sub" x="762" y="139" text-anchor="middle">global memory</text>
 
 <text class="lbl" x="60" y="184">GRID · ${fmt(r.numBlocks)} BLOCKS × ${r.blockSize} THREADS · ONE THREAD PER POINT</text>
-<text class="sub" x="${W - 60}" y="184" text-anchor="end">shade = points in that block that changed cluster</text>
+<text class="sub" x="${W - 60}" y="184" text-anchor="end">grey = block did no work · blue = relative activity within this iteration</text>
 ${cells.join('\n')}
 ${FRAMES.map((f, i) => frameText(i, 'sub', W - 60, GRID_Y + ROWS * PITCH + 18, 'end',
-  `${fmt(frames[i].changed)} of ${fmt(r.N)} points changed`)).join('\n')}
+  `${fmt(frames[i].changed)} of ${fmt(r.N)} points changed · ${fmt(frames[i].blockChanged.reduce((a, v) => a + (v ? 0 : 1), 0))} of ${fmt(r.numBlocks)} blocks idle`)).join('\n')}
 
 <text class="lbl" x="60" y="386">SHARED MEMORY PER BLOCK · ${fmt(r.sharedBytes)} BYTES, PACKED BY HAND</text>
 ${smRegions.map(s => `<rect x="${s.x.toFixed(1)}" y="${SM_Y}" width="${Math.max(1, s.w - 1.5).toFixed(1)}" height="${SM_H}" rx="3" fill="var(--sm)" opacity="${s.bytes > 200 ? 0.9 : 0.55}"/>`).join('\n')}
