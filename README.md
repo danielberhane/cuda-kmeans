@@ -155,7 +155,7 @@ The second and third are verified on an A100: the scaling sweep now runs to 5,00
 points (39,063 blocks), where it previously crashed at 250,000.
 
 > **Not yet verified correct on Volta or later.** With all three applied, an A100 run
-> still disagrees with the CPU baseline on iteration counts. The harness
+> still disagrees with the CPU baseline on iteration counts. The benchmark
 > [gates on that agreement](bench/README.md) and currently reports a mismatch, so no
 > modern-hardware timings are published here. The 2015 figures above were measured on
 > the hardware this was written for and stand on their own.
@@ -204,7 +204,7 @@ mkdir -p bench/results
 sbatch bench/run_bench.slurm
 ```
 
-The harness sweeps dimensionality × K plus an N-scaling series, takes the fastest of
+The benchmark sweeps dimensionality × K plus an N-scaling series, takes the fastest of
 three runs, and **gates on the CPU and GPU converging in the same number of
 iterations** — if they diverge they are not doing the same work, and any speedup
 computed from them is meaningless. That gate is what caught the bug described above.
@@ -219,7 +219,7 @@ Engineering at Western University. The benchmark figures above are from the orig
 presentation; the hardware they were measured on was not recorded, which is one of
 several gaps [`bench/run_bench.slurm`](bench/run_bench.slurm) closes on a re-run.
 
-The CUDA kernels in `src/cuda_kmeans.cu`, the host driver and the benchmark harness in
+The CUDA kernels in `src/cuda_kmeans.cu`, the host driver and the benchmark scripts in
 `bench/` were written by **Daniel Berhane Araya**.
 [`presentation/kernel-design-notes.txt`](presentation/kernel-design-notes.txt) is the
 original 2015 design note.

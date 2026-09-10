@@ -1,4 +1,4 @@
-# Benchmark harness
+# Benchmarking
 
 ## Running the sweep
 
@@ -27,7 +27,7 @@ Results land in `bench/results/` as two CSVs plus a run log.
 
 ## The correctness gate
 
-The harness refuses to let you publish a meaningless number. After the sweep it
+The benchmark refuses to let you publish a meaningless number. After the sweep it
 compares GPU and CPU iteration counts for every paired configuration:
 
 ```
@@ -46,7 +46,7 @@ convergence at `delta = changed/numObjs <= threshold`, and a 500-iteration cap.
 
 It is deliberately **not** handicapped — built at `-O3`, using the cache-friendly AoS
 layout rather than the SoA layout the GPU needs, with an optional OpenMP path so the
-harness can report both single-core and all-core figures. Comparing a GPU against a
+sweep can report both single-core and all-core figures. Comparing a GPU against a
 strawman CPU baseline inflates speedup.
 
 Verified independently: on `points_3d.txt` at K=4 it converges in 31 iterations and

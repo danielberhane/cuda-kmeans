@@ -22,7 +22,7 @@ gen_points
 
 # Benchmark outputs and generated datasets.
 # gen_points is deterministic given (seed, N, D), so the scaling datasets are
-# reproducible from the harness and are not committed -- at N=5M they are
+# reproducible from gen_points and are not committed -- at N=5M they are
 # ~500 MB each.
 bench/results/
 bench/data/

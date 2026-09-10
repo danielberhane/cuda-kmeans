@@ -18,7 +18,7 @@
 /*   Deliberately NOT handicapped: built at -O3, uses the cache-friendly     */
 /*   AoS layout rather than the SoA layout the GPU needs, and can use all    */
 /*   cores via OpenMP. Comparing a GPU against an artificially slow CPU      */
-/*   baseline inflates speedup, so the harness reports both the 1-thread     */
+/*   baseline inflates speedup, so the sweep reports both the 1-thread       */
 /*   and the all-core figure.                                                */
 /*                                                                           */
 /*   Author: Daniel Berhane Araya -- MIT License, see LICENSE                */

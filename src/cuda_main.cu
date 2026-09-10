@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  /* --csv emits one machine-readable row on stdout for the benchmark harness,
+  /* --csv emits one machine-readable row on stdout for the benchmark sweep,
      in place of the human-readable summary. */
   if (argc > 6 && strcmp(argv[6], "--csv") == 0) emit_csv = 1;
 
