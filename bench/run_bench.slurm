@@ -62,8 +62,8 @@ log "=== environment ==="
 # -----------------------------------------------------------------------------
 log "=== build ==="
 make clean
-make cuda_kmeans            # clean build -- source of the headline number
-make cuda_kmeans_bench      # instrumented -- per-kernel breakdown only
+make GENCODE=-arch=native cuda_kmeans        # clean build -- headline number
+make GENCODE=-arch=native cuda_kmeans_bench  # instrumented -- breakdown only
 make bench-tools            # seq_kmeans, seq_kmeans_omp, gen_points
 
 HAVE_OMP=0

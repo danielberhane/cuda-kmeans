@@ -15,18 +15,24 @@ DFLAGS      =
 OPTFLAGS    = -O2
 INCFLAGS    = -I$(SRCDIR)
 CFLAGS      = $(OPTFLAGS) $(DFLAGS) $(INCFLAGS) -DBLOCK_SHARED_MEM_OPTIMIZATION=1
-NVCCFLAGS   = $(CFLAGS)
+NVCCFLAGS   = $(CFLAGS) $(GENCODE)
 LDFLAGS     = $(OPTFLAGS)
 
 NVCC        = nvcc
 CC         ?= cc
 
-# Target GPU architecture. CUDA 12.x defaults to sm_52 and relies on PTX JIT,
-# which leaves performance on the table on a modern device. `native` compiles
-# for the GPU present at compile time (CUDA 11.5+), so builds must happen on a
-# GPU node -- run_bench.slurm does exactly that. Override for a login-node
-# build, e.g.  make GENCODE="-arch=sm_80"
-GENCODE    ?= -arch=native
+# Target GPU architecture. Empty by default so `make` works anywhere, including
+# a login node with no GPU attached -- nvcc then targets its default (sm_52 on
+# CUDA 12.x) and relies on PTX JIT, which is correct but leaves performance on
+# the table.
+#
+# For a build you intend to benchmark, name the architecture:
+#     make GENCODE="-arch=sm_80"     # A100
+#     make GENCODE="-arch=sm_70"     # V100
+#     make GENCODE="-arch=native"    # match the GPU in this machine (CUDA 11.5+,
+#                                    # requires a GPU present at compile time)
+# run_bench.slurm passes -arch=native, since it builds on the GPU node itself.
+GENCODE    ?=
 
 # Host-side benchmark tools are plain C and need no CUDA toolchain, so they
 # build anywhere. -O3 because a handicapped CPU baseline would inflate the

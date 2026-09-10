@@ -135,11 +135,14 @@ make bench-tools          # CPU baseline + data generator (no CUDA needed)
 make clean
 ```
 
-`GENCODE` defaults to `-arch=native`, which requires building on a machine that has
-the target GPU. Override it for a login-node build:
+`GENCODE` is empty by default, so `make` works anywhere — including a login node with
+no GPU — but nvcc then targets its own default and relies on PTX JIT. Name the
+architecture for anything you intend to benchmark:
 
 ```bash
-make GENCODE="-arch=sm_80"
+make GENCODE="-arch=sm_80"     # A100
+make GENCODE="-arch=sm_70"     # V100
+make GENCODE="-arch=native"    # match this machine's GPU (needs a GPU present)
 ```
 
 ## Usage
