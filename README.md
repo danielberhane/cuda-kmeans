@@ -4,7 +4,9 @@ GPU-accelerated k-means clustering in CUDA C — three hand-written kernels, man
 packed shared memory, and a two-stage reduction, for datasets of arbitrary
 dimensionality.
 
-![CUDA k-means execution model](assets/pipeline.svg)
+<p align="center">
+  <img src="assets/pipeline.svg" width="880" alt="CUDA k-means execution model">
+</p>
 
 *99,968 points transposed for coalesced access, tiled across 781 thread blocks, and
 reduced by three kernels per iteration. The grid shades each block by how many of its
@@ -27,7 +29,9 @@ the Northwestern parallel k-means package (Wei-keng Liao / Serban Giuroiu) — M
 OpenMP, sequential, and its own CUDA version. Those four are third-party code;
 `MyCUDA` is this repository.
 
-![Computation time vs. number of clusters](presentation/figures/time-vs-clusters-1d-100k.png)
+<p align="center">
+  <img src="presentation/figures/time-vs-clusters-1d-100k.png" width="860" alt="Computation time vs. number of clusters">
+</p>
 
 | K   | Sequential | OpenMP  | MPI     | **MyCUDA** | CUDA (ref) |
 |-----|-----------|---------|---------|------------|------------|
@@ -46,7 +50,9 @@ Adding clusters costs the GPU almost nothing until the work no longer fits.
 
 The same code is **4–10× slower than the CPU** at K=2:
 
-![Computation time vs. data size at K=2](presentation/figures/time-vs-datasize-1d-k2.png)
+<p align="center">
+  <img src="presentation/figures/time-vs-datasize-1d-k2.png" width="820" alt="Computation time vs. data size at K=2">
+</p>
 
 | N       | Sequential | MyCUDA   |
 |---------|-----------|----------|
