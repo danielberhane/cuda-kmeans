@@ -216,8 +216,7 @@ settings, and how the diagram is regenerated.
 
 Written in 2015 as a graduate project in the Department of Electrical and Computer
 Engineering at Western University. The benchmark figures above are from the original
-presentation; the hardware they were measured on was not recorded, which is one of
-several gaps [`bench/run_bench.slurm`](bench/run_bench.slurm) closes on a re-run.
+presentation; the hardware they were measured on was not recorded.
 
 The CUDA kernels in `src/cuda_kmeans.cu`, the host driver and the benchmark scripts in
 `bench/` were written by **Daniel Berhane Araya**.
@@ -227,8 +226,7 @@ original 2015 design note.
 The I/O utilities (`cuda_io.cu`, `cuda_wtime.cu`), header (`kmeans.h`) and original
 Makefile structure are based on code by **Wei-keng Liao** (Northwestern University) and
 **Serban Giuroiu**, MIT-licensed. The MPI, OpenMP, sequential and reference-CUDA
-implementations used as comparison baselines in the charts are from that same package;
-they are not vendored here, only the measurements taken against them are reproduced.
+implementations used as comparison baselines in the charts are from that same package.
 
 ## License
 
