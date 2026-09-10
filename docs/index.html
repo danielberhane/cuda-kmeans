@@ -1,0 +1,113 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CUDA k-means — interactive execution model</title>
+<meta name="description" content="Interactive visualisation of a CUDA k-means implementation: grid decomposition, shared memory layout, and convergence.">
+<link rel="stylesheet" href="style.css">
+<div class="wrap">
+<header>
+  <h1>CUDA k-means · interactive execution model</h1>
+  <p class="lede">
+    Runs the actual algorithm from
+    <a href="https://github.com/danielberhane/cuda-kmeans">danielberhane/cuda-kmeans</a>
+    on the real benchmark dataset, in your browser, and draws what the GPU does with it.
+    Change the parameters and everything below recomputes from scratch.
+  </p>
+</header>
+
+<div class="controls">
+  <div class="ctl">
+    <label for="k">Clusters (K) <span class="val" id="k-out">4</span></label>
+    <input type="range" id="k" min="2" max="16" step="1" value="4">
+  </div>
+  <div class="ctl">
+    <label for="block">Threads / block <span class="val" id="block-out">128</span></label>
+    <input type="range" id="block" min="32" max="512" step="32" value="128">
+  </div>
+  <div class="ctl">
+    <label for="threshold">Threshold <span class="val" id="threshold-out">0.0010</span></label>
+    <input type="range" id="threshold" min="0.0002" max="0.02" step="0.0002" value="0.001">
+  </div>
+  <div class="ctl">
+    <label>Dataset</label>
+    <div class="radio">
+      <label><input type="radio" name="dataset" value="benchmark" checked> benchmark</label>
+      <label><input type="radio" name="dataset" value="clustered"> clustered</label>
+    </div>
+  </div>
+  <div class="ctl" style="min-width:auto">
+    <label>&nbsp;</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button id="play">Pause</button>
+      <button id="step">Step</button>
+      <span id="busy" hidden>computing…</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Points</h2>
+    <p class="note">
+      Dimensions 1 and 2, coloured by cluster. The benchmark data has no clusters in it,
+      so k-means partitions it into Voronoi cells rather than recovering structure — switch
+      to <em>clustered</em> to see the difference. The vertical banding is real: dimension 1
+      draws from only 19,968 distinct values, and 288 of them account for 80% of the points.
+    </p>
+    <canvas id="points"></canvas>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:18px">
+      <h2>Grid · one thread per point</h2>
+      <p class="note">Each cell is one thread block, shaded by how many of its points changed cluster this iteration.</p>
+      <canvas id="grid"></canvas>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <h2>Shared memory per block</h2>
+      <p class="note">One <span class="mono">extern __shared__</span> allocation, sliced into six regions. Drawn to scale.</p>
+      <canvas id="shared"></canvas>
+      <div id="sm-legend"></div>
+    </div>
+
+    <div class="card">
+      <h2>State</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">Iteration</div><div class="v" id="s-iter">–</div></div>
+        <div class="stat"><div class="k">δ changed/N</div><div class="v" id="s-delta">–</div></div>
+        <div class="stat"><div class="k">Points moved</div><div class="v" id="s-changed">–</div></div>
+        <div class="stat"><div class="k">Grid</div><div class="v" id="s-grid">–</div></div>
+        <div class="stat"><div class="k">Reduce kernel</div><div class="v warn" id="s-reduce">–</div></div>
+        <div class="stat"><div class="k">Shared / block</div><div class="v" id="s-shared">–</div></div>
+        <div class="stat"><div class="k">Dataset</div><div class="v" id="s-n">–</div></div>
+        <div class="stat"><div class="k">Trace computed in</div><div class="v" id="s-time">–</div></div>
+      </div>
+      <div class="stat" style="margin-top:12px"><div class="k">Cluster sizes</div><div class="v" id="s-sizes" style="font-size:12.5px">–</div></div>
+      <div class="playbar">
+        <input type="range" id="scrub" min="0" max="0" step="1" value="0">
+        <span class="pill" id="converged" hidden>converged</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <p>
+    <strong class="warn">Note the reduce kernel.</strong> <span class="mono">reduce_cluster_changed</span>
+    launches a single thread block regardless of problem size, so it runs on one SM while the rest
+    of the device idles. On the 2015 benchmarks it consumed 22% of per-iteration kernel time to move
+    0.5% of the bytes.
+  </p>
+  <p>
+    This page runs a JavaScript implementation matching the CUDA semantics exactly — first-K
+    initialisation, squared float distance without <span class="mono">sqrt</span>, δ = changed/N
+    convergence. It is verified against values measured from the real build
+    (<span class="mono">tools/verify-trace.mjs</span>): 781 blocks, 1,904 bytes of shared memory,
+    31 iterations, and the full δ sequence. Timings shown are JavaScript on your CPU and are
+    <em>not</em> GPU measurements — see the
+    <a href="https://github.com/danielberhane/cuda-kmeans#results">benchmarks</a> for those.
+  </p>
+</footer>
+</div>
+<script type="module" src="app.js"></script>

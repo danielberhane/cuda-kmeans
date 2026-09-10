@@ -12,6 +12,11 @@ points changed cluster, stepping through iterations 1, 3, 8 and 31 — watch it 
 as the algorithm converges. Every value in the diagram is generated from an actual run
 (`tools/make-pipeline-svg.mjs`), not drawn by hand.*
 
+**▶ [Try the interactive version](https://danielberhane.github.io/cuda-kmeans/)** — runs the
+real algorithm on the real dataset in your browser. Change K, threads per block or the
+convergence threshold and the whole trace recomputes; step or scrub through iterations and
+watch the grid go quiet.
+
 ---
 
 ## Results
@@ -176,9 +181,19 @@ coordinates:
 `<input>.membership`. `--csv` emits a single machine-readable row instead and skips
 writing them, for benchmark sweeps.
 
-Note that the bundled datasets are **uniformly random**, not naturally clustered.
-They exist to measure throughput, not clustering quality; k-means on them produces a
-Voronoi partition of the space rather than recovered structure.
+Note that the bundled datasets contain **no cluster structure**. They exist to measure
+throughput, not clustering quality; k-means on them produces a Voronoi partition of the
+space rather than recovered structure.
+
+They are also not quite uniform. In `points_3d.txt`, dimensions 2 and 3 hold 99,968
+distinct values as expected, but dimension 1 draws from only **19,968** — the same value
+pool as `points_1d.txt` — and 288 of those values account for roughly 80% of all points,
+repeating between 191 and 418 times each. The
+[interactive demo](https://danielberhane.github.io/cuda-kmeans/) renders this as visible
+vertical banding.
+
+This does not affect the timing results, which perform identical arithmetic either way,
+but it does mean the data should not be described as uniformly random.
 
 ## Re-running the benchmarks
 
@@ -223,10 +238,15 @@ the comparison is not against a strawman.
 │   ├── seq_kmeans.c      # semantics-matched CPU baseline
 │   ├── gen_points.c      # deterministic generator for scaling studies
 │   └── run_bench.slurm   # benchmark sweep
+├── docs/                 # the interactive demo (GitHub Pages)
+│   ├── engine.js         # the algorithm, shared with the tools below
+│   ├── worker.js         # traces run off the main thread
+│   └── app.js            # canvas rendering and controls
 ├── tools/
-│   ├── kmeans-engine.mjs      # reference implementation of the same algorithm
+│   ├── kmeans-engine.mjs      # Node wrapper over docs/engine.js
 │   ├── verify-trace.mjs       # asserts it matches the measured values
-│   └── make-pipeline-svg.mjs  # generates the diagram above from a real run
+│   ├── make-pipeline-svg.mjs  # generates the diagram above from a real run
+│   └── make-demo-data.mjs     # packs the dataset for the browser
 ├── assets/pipeline.svg   # the animated execution-model diagram
 ├── data/                 # 99,968 points at 1, 3 and 10 dimensions
 ├── presentation/
