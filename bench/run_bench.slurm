@@ -19,10 +19,16 @@
 #SBATCH --job-name=cuda-kmeans-bench
 #SBATCH --output=bench/results/slurm-%j.out
 #SBATCH --error=bench/results/slurm-%j.err
-#SBATCH --time=02:00:00
+#SBATCH --time=00:45:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --partition=gpuq
+
+# Required on this cluster -- without it submission is rejected outright with
+# "Invalid qos specification", for batch and interactive alike. Valid values
+# for this account: gpu, interactive, ist_dept, normal; only `gpu` is accepted
+# alongside a gpuq + A100 gres request.
+#SBATCH --qos=gpu
 
 # A full A100 80GB, named explicitly. A bare `--gres=gpu:1` is REJECTED on this
 # cluster ("zero GPU resources requested") because gpuq also advertises MIG
