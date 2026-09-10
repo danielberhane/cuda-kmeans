@@ -121,6 +121,38 @@ iterations        31                             threshold = 0.001
 Those six regions are carved out of a single `extern __shared__` allocation by pointer
 arithmetic, and are drawn to scale in the diagram above.
 
+## Running on modern hardware
+
+This was written in 2015 against **warp-synchronous execution** — the guarantee, true of
+every NVIDIA GPU through Pascal, that the 32 threads of a warp advance in lockstep. Four
+reductions relied on it, unrolling their final warp with no synchronisation between
+steps and no `volatile` qualifier. That was idiomatic and correct at the time.
+
+Volta (2017) introduced independent thread scheduling and removed the guarantee. A run
+on an A100 (sm_80) confirmed the consequence: the reductions lose updates, the
+changed-point count comes out low, δ falls below the threshold too early, and the loop
+converges in 6 iterations where the CPU takes 31.
+
+Three fixes are in this repository:
+
+- **the four reductions now synchronise at every step**, correct on any architecture
+- **`reduce_cluster_changed` folds strided slices** rather than mapping one thread per
+  block-partial. That lifted a hard ceiling at N = 131,072: past 1,024 blocks the launch
+  asked for more than 1,024 threads and failed with CUDA error 9 — a failure the comment
+  above that kernel predicted a decade before it was hit
+- **`s_membership` is written for every thread.** It had been assigned only for points
+  that *changed* cluster, so from iteration 2 onward the per-block centroid sums were
+  accumulated from uninitialised shared memory
+
+The second and third are verified on an A100: the scaling sweep now runs to 5,000,000
+points (39,063 blocks), where it previously crashed at 250,000.
+
+> **Not yet verified correct on Volta or later.** With all three applied, an A100 run
+> still disagrees with the CPU baseline on iteration counts. The harness
+> [gates on that agreement](bench/README.md) and currently reports a mismatch, so no
+> modern-hardware timings are published here. The 2015 figures above were measured on
+> the hardware this was written for and stand on their own.
+
 ## Build and usage
 
 Requires the NVIDIA CUDA Toolkit and a CUDA-capable GPU.
