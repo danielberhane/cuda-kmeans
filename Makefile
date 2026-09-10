@@ -21,6 +21,13 @@ LDFLAGS     = $(OPTFLAGS)
 NVCC        = nvcc
 CC         ?= cc
 
+# Target GPU architecture. CUDA 12.x defaults to sm_52 and relies on PTX JIT,
+# which leaves performance on the table on a modern device. `native` compiles
+# for the GPU present at compile time (CUDA 11.5+), so builds must happen on a
+# GPU node -- run_bench.slurm does exactly that. Override for a login-node
+# build, e.g.  make GENCODE="-arch=sm_80"
+GENCODE    ?= -arch=native
+
 # Host-side benchmark tools are plain C and need no CUDA toolchain, so they
 # build anywhere. -O3 because a handicapped CPU baseline would inflate the
 # reported speedup.
