@@ -3,43 +3,40 @@
 #  run_bench.slurm -- benchmark sweep for cuda-kmeans
 #
 #  ,--------------------------------------------------------------------.
-#  |  BEFORE SUBMITTING: fill in the four PLACEHOLDER values below.      |
-#  |  They are intentionally left blank rather than guessed, because     |
-#  |  partition names, GPU types and CUDA module strings differ between  |
-#  |  clusters and change over time. Run these three commands on the     |
-#  |  login node and use their output:                                   |
+#  |  Configured for GMU's Hopper cluster (gpuq, A100 80GB, CUDA 12.6.3).|
 #  |                                                                     |
-#  |    sinfo -s                  # partition names + availability       |
-#  |    scontrol show partition   # which partitions expose GPUs (gres)  |
-#  |    module avail cuda         # the exact CUDA module string         |
+#  |    mkdir -p bench/results        # sbatch fails if --output's dir    |
+#  |                                  # does not already exist            |
+#  |    sbatch bench/run_bench.slurm                                      |
 #  |                                                                     |
-#  |  Then:  sbatch bench/run_bench.slurm                                |
+#  |  On another cluster, re-derive the four settings below with:         |
+#  |    sinfo -p <partition> -o "%20P %15N %50G"                          |
+#  |    scontrol show node <a gpu node> | grep -i gres                    |
+#  |    module avail cuda                                                 |
 #  `--------------------------------------------------------------------'
 # =============================================================================
 
 #SBATCH --job-name=cuda-kmeans-bench
 #SBATCH --output=bench/results/slurm-%j.out
 #SBATCH --error=bench/results/slurm-%j.err
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --partition=gpuq
 
-## PLACEHOLDER 1 -- partition that has GPUs (from `sinfo -s`)
-###SBATCH --partition=PLACEHOLDER_PARTITION
+# A full A100 80GB, named explicitly. A bare `--gres=gpu:1` is REJECTED on this
+# cluster ("zero GPU resources requested") because gpuq also advertises MIG
+# profiles (1g.10gb / 2g.20gb / 3g.40gb) and the type must be disambiguated.
+# Naming the full card also guarantees the benchmark measures a whole GPU
+# rather than a fraction of one, which would need a caveat in every number.
+#SBATCH --gres=gpu:A100.80gb:1
 
-## PLACEHOLDER 2 -- GPU request (from `scontrol show partition`); often
-##                  --gres=gpu:1  or  --gres=gpu:a100:1
-###SBATCH --gres=gpu:1
-
-## PLACEHOLDER 3 -- cores for the multicore CPU baseline. Set to a full
-##                  socket so the OpenMP comparison is meaningful.
-###SBATCH --cpus-per-task=16
+# gpu0xx nodes are 2x32 cores. One full socket for the OpenMP CPU baseline.
+#SBATCH --cpus-per-task=32
 
 set -euo pipefail
 
-## PLACEHOLDER 4 -- exact module string(s) from `module avail cuda`
-# module load PLACEHOLDER_CUDA_MODULE
-# module load gcc            # if the default gcc is too old for nvcc
+module load cuda/12.6.3
 
 # -----------------------------------------------------------------------------
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
