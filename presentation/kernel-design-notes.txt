@@ -1,0 +1,62 @@
+
+Kernels
+
+1. find_nearest_cluster
+
+   parameters:  n, d, k, objects, clusters, membership, intermediate, sumClusters, sumCoordinate
+
+   input : n, d, k, objects, clusters, membership
+   output : intermediate, sumClusters, sumCoordinate
+
+   shared memory: s_objects, s_clusters, s_sum_clusters, s_sum_coords, s_memb_changed, s_membership
+
+   load part of data
+   load cluster
+   calculate shortest distance
+   update global membership
+   update s_memb_changed - reduce it partially which will be finally reduced by another kernel - it is used as a stopping condition
+   update shared membership - instead of using the global mem. use this to updated the shared mem. sum clusters and sum coords
+
+
+
+
+2. reduce_coord_clusters
+
+   input: d, k, sum_cluster, sum_coords [both outputs of find_nearest_cluster], size of sum_cluster [for reduction purpose]
+   output: sum of clusters, sum of coordinates
+
+   shared memory: s_clusters - to reduce the cluster sums
+   	  	  s_coords - to reduce the coords sum
+		  s_total_cluster - total sum of cluster to be transfered finally to global memory
+		  s_total_coord - total sum of coords to be transfered finally to global memory
+
+
+   Each thread block handles a cluster and its coordinates.
+
+ repeat {
+   take 2 * num_of_threadBlocks, parallel reduce and increment a shared memory [cluster]
+   do the same for all coordinates
+
+   } until all arrays are reduced
+		  
+   
+
+3. reduce_cluster_changed
+
+   input: intermediate sums from final_nearest_cluster
+   output: total number of changed clusters
+
+
+   do
+      {
+      find_cluster
+      reduce_coord_sums
+      reduce_cluser_changed -> threshold
+
+      find centroids
+
+      }
+
+      while (stopping condition)
+
+      stopping condition: (number of clusters changed /number of objects) > threshold
