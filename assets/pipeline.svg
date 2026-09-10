@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 616" width="900" height="616" role="img" aria-labelledby="ttl dsc">
 <title id="ttl">CUDA k-means execution model</title>
-<desc id="dsc">99,968 points in 3 dimensions are transposed to a coordinate-major layout for coalesced access, tiled across 781 thread blocks of 128 threads, and processed by three kernels per iteration. The grid heatmap shows how many points in each block changed cluster; it goes quiet as the algorithm converges over 31 iterations. The third kernel launches a single block, leaving most of the device idle.</desc>
+<desc id="dsc">99,968 points in 3 dimensions are transposed to a coordinate-major layout for coalesced access, tiled across 781 thread blocks of 128 threads, and processed by three kernels per iteration. A blocking copy of the convergence value back to the host interrupts the pipeline between the second and third kernels. The grid heatmap shows how many points in each block changed cluster; it goes quiet as the algorithm converges over 31 iterations. The third kernel launches a single block, leaving most of the device idle.</desc>
 <style>
   :root{
     --bg:#fbfbfa;--panel:#ffffff;--ink:#16171a;--dim:#6a6d73;--line:#dcdcd6;
@@ -894,16 +894,16 @@
 <text class="mono" x="188" y="516" text-anchor="middle" font-size="11.5">find_nearest_cluster</text>
 <text class="sub" x="188" y="534" text-anchor="middle">781 × 128 threads</text>
 <path class="arrow" d="M310,524 L326,524"/>
-<rect class="box" x="332" y="492" width="236" height="64"/>
-<text class="mono" x="450" y="516" text-anchor="middle" font-size="11.5">reduce_coord_clusters</text>
-<text class="sub" x="450" y="534" text-anchor="middle">781 × 128 threads</text>
+<rect class="warnbox" x="332" y="492" width="236" height="64"/>
+<text class="mono" x="450" y="516" text-anchor="middle" font-size="11.5">reduce_cluster_changed</text>
+<text class="sub" x="450" y="534" text-anchor="middle">1 × 1,024 threads</text>
+<text class="warntx" x="450" y="549" text-anchor="middle">one block — most SMs idle</text>
 <path class="arrow" d="M572,524 L588,524"/>
-<rect class="warnbox" x="594" y="492" width="236" height="64"/>
-<text class="mono" x="712" y="516" text-anchor="middle" font-size="11.5">reduce_cluster_changed</text>
-<text class="sub" x="712" y="534" text-anchor="middle">1 × 1,024 threads</text>
-<text class="warntx" x="712" y="549" text-anchor="middle">one block — most SMs idle</text>
+<rect class="box" x="594" y="492" width="236" height="64"/>
+<text class="mono" x="712" y="516" text-anchor="middle" font-size="11.5">reduce_coord_clusters</text>
+<text class="sub" x="712" y="534" text-anchor="middle">781 × 128 threads</text>
 <circle class="tok" cx="90" cy="524" r="5" fill="var(--flow)"/>
 <path class="pulse" stroke="var(--flow)" stroke-width="2.5" fill="none" stroke-linecap="round" marker-end="url(#arf)"
   d="M830,566 L846,566 L846,584 L54,584 L54,534"/>
-<text class="sub" x="450" y="602" text-anchor="middle">blocking device→host copy of δ, centroid division on the host, then the next iteration</text>
+<text class="sub" x="450" y="602" text-anchor="middle">the δ copy blocks mid-pipeline; centroid sums come back after the third kernel and are divided on the host</text>
 </svg>

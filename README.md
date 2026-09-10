@@ -91,25 +91,28 @@ K-means partitions N points into K clusters by repeatedly assigning each point t
 nearest centroid, then moving each centroid to the mean of its members, until fewer
 than `threshold` of the points change cluster.
 
-Both steps are parallelised across three kernels:
+Both steps are parallelised across three kernels, launched in this order every
+iteration:
 
-**`find_nearest_cluster`** — one thread per point. Computes the nearest centroid and
+**1. `find_nearest_cluster`** — one thread per point. Computes the nearest centroid and
 accumulates per-block coordinate sums in shared memory, so each block emits a partial
 result rather than contending on global memory.
 
-**`reduce_coord_clusters`** — reduces those per-block partial sums across all blocks
-into the global coordinate sums and per-cluster counts.
-
-**`reduce_cluster_changed`** — counts how many points changed cluster this iteration,
+**2. `reduce_cluster_changed`** — counts how many points changed cluster this iteration,
 to test convergence.
+
+**3. `reduce_coord_clusters`** — reduces the per-block partial sums across all blocks
+into the global coordinate sums and per-cluster counts.
 
 The host transposes the data from `[N][D]` to `[D][N]` **once**, before upload. That
 turns each warp's reads of a coordinate into a contiguous, coalesced access instead of
 a strided one — the single most important layout decision in the implementation.
 
-Centroid division and the convergence test happen on the host, which is why each
-iteration includes a blocking device-to-host copy. That serialisation is visible in
-the K=2 results above.
+Centroid division and the convergence test happen on the host, so each iteration
+includes blocking device-to-host copies. Note where the first one falls: δ is copied
+back **between the second and third kernels**, so the host stall interrupts the
+pipeline rather than following it. That serialisation is what the K=2 results above
+are measuring.
 
 ### Launch geometry
 

@@ -62,10 +62,14 @@ const smRegions = r.shared.map(s => {
 });
 
 // kernel pipeline
+// Execution order as launched in cuda_kmeans.cu's convergence loop. Note that
+// reduce_cluster_changed runs SECOND, and the blocking device->host copy of
+// delta happens between it and reduce_coord_clusters -- so the host stall
+// interrupts the pipeline rather than following it.
 const kernels = [
   { n: 'find_nearest_cluster',   g: `${fmt(r.numBlocks)} × ${r.blockSize}` },
-  { n: 'reduce_coord_clusters',  g: `${fmt(r.numBlocks)} × ${r.blockSize}` },
   { n: 'reduce_cluster_changed', g: `1 × ${fmt(r.reductionThreads)}`, warn: true },
+  { n: 'reduce_coord_clusters',  g: `${fmt(r.numBlocks)} × ${r.blockSize}` },
 ];
 const KB_Y = 492, KB_H = 64, KB_W = 236, KB_GAP = 26;
 const KB_X0 = Math.round((W - (KB_W * 3 + KB_GAP * 2)) / 2);
@@ -80,7 +84,7 @@ const frameText = (i, cls, x, y, anchor, body) =>
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-labelledby="ttl dsc">
 <title id="ttl">CUDA k-means execution model</title>
-<desc id="dsc">${fmt(r.N)} points in ${r.D} dimensions are transposed to a coordinate-major layout for coalesced access, tiled across ${fmt(r.numBlocks)} thread blocks of ${r.blockSize} threads, and processed by three kernels per iteration. The grid heatmap shows how many points in each block changed cluster; it goes quiet as the algorithm converges over ${r.trace.length} iterations. The third kernel launches a single block, leaving most of the device idle.</desc>
+<desc id="dsc">${fmt(r.N)} points in ${r.D} dimensions are transposed to a coordinate-major layout for coalesced access, tiled across ${fmt(r.numBlocks)} thread blocks of ${r.blockSize} threads, and processed by three kernels per iteration. A blocking copy of the convergence value back to the host interrupts the pipeline between the second and third kernels. The grid heatmap shows how many points in each block changed cluster; it goes quiet as the algorithm converges over ${r.trace.length} iterations. The third kernel launches a single block, leaving most of the device idle.</desc>
 <style>
   :root{
     --bg:#fbfbfa;--panel:#ffffff;--ink:#16171a;--dim:#6a6d73;--line:#dcdcd6;
@@ -178,7 +182,7 @@ ${kernels.map((k, i) => {
 <circle class="tok" cx="${KB_X0 + 20}" cy="${KB_Y + KB_H / 2}" r="5" fill="var(--flow)"/>
 <path class="pulse" stroke="var(--flow)" stroke-width="2.5" fill="none" stroke-linecap="round" marker-end="url(#arf)"
   d="M${KB_X0 + 3 * KB_W + 2 * KB_GAP},${KB_Y + KB_H + 10} L${KB_X0 + 3 * KB_W + 2 * KB_GAP + 16},${KB_Y + KB_H + 10} L${KB_X0 + 3 * KB_W + 2 * KB_GAP + 16},${KB_Y + KB_H + 28} L${KB_X0 - 16},${KB_Y + KB_H + 28} L${KB_X0 - 16},${KB_Y + KB_H / 2 + 10}"/>
-<text class="sub" x="${W / 2}" y="${KB_Y + KB_H + 46}" text-anchor="middle">blocking device→host copy of δ, centroid division on the host, then the next iteration</text>
+<text class="sub" x="${W / 2}" y="${KB_Y + KB_H + 46}" text-anchor="middle">the δ copy blocks mid-pipeline; centroid sums come back after the third kernel and are divided on the host</text>
 </svg>
 `;
 
