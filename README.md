@@ -4,6 +4,14 @@ GPU-accelerated k-means clustering in CUDA C — three hand-written kernels, man
 packed shared memory, and a two-stage reduction, for datasets of arbitrary
 dimensionality.
 
+![CUDA k-means execution model](assets/pipeline.svg)
+
+*99,968 points transposed for coalesced access, tiled across 781 thread blocks, and
+reduced by three kernels per iteration. The grid shades each block by how many of its
+points changed cluster, stepping through iterations 1, 3, 8 and 31 — watch it go quiet
+as the algorithm converges. Every value in the diagram is generated from an actual run
+(`tools/make-pipeline-svg.mjs`), not drawn by hand.*
+
 ---
 
 ## Results
@@ -184,6 +192,19 @@ series, takes the fastest of three runs, and **gates on the CPU and GPU builds
 converging in the same number of iterations** — if they diverge they are not doing the
 same work, and any speedup computed from them is meaningless.
 
+The diagram at the top is regenerated the same way, from the same algorithm:
+
+```bash
+node tools/verify-trace.mjs        # gate: 781 blocks, 1,904 B, 31 iterations, δ sequence
+node tools/make-pipeline-svg.mjs   # -> assets/pipeline.svg
+```
+
+`tools/verify-trace.mjs` exists so the diagram cannot drift into fiction. It asserts
+the engine reproduces every value measured from the real code — grid geometry, the
+shared-memory layout region by region, the iteration count, and the full δ sequence to
+five decimals — and checks that per-block counts sum to the global count on every
+iteration. If it fails, nothing generated from that engine should be published.
+
 `bench/seq_kmeans.c` is the CPU baseline. It matches this implementation exactly
 (first-K initialisation, squared float distance without `sqrt`, `delta = changed/N`
 convergence, 500-iteration cap) and is built at `-O3` with an optional OpenMP path, so
@@ -202,6 +223,11 @@ the comparison is not against a strawman.
 │   ├── seq_kmeans.c      # semantics-matched CPU baseline
 │   ├── gen_points.c      # deterministic generator for scaling studies
 │   └── run_bench.slurm   # benchmark sweep
+├── tools/
+│   ├── kmeans-engine.mjs      # reference implementation of the same algorithm
+│   ├── verify-trace.mjs       # asserts it matches the measured values
+│   └── make-pipeline-svg.mjs  # generates the diagram above from a real run
+├── assets/pipeline.svg   # the animated execution-model diagram
 ├── data/                 # 99,968 points at 1, 3 and 10 dimensions
 ├── presentation/
 │   ├── k-means-cuda-2015.pptx
