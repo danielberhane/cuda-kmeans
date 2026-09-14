@@ -93,10 +93,9 @@ Fixes in this repository:
 - `s_membership` is written for every thread. It was set only for points that changed
   cluster, so from iteration 2 the centroid sums read uninitialised shared memory.
 
-The scaling sweep now runs to 5,000,000 points on an A100. **Correctness on Volta and
-later is not yet confirmed**: an A100 run still disagrees with the CPU baseline on
-iteration count, and the benchmark [withholds timings](bench/README.md) until they
-match. The figures above are from 2015 hardware.
+**Not yet verified on Volta or later.** With these fixes an A100 run still converges in
+a different number of iterations than the CPU baseline, so no modern-GPU timings are
+published.
 
 ## Build and run
 
