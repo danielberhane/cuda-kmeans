@@ -62,6 +62,13 @@ The bundled datasets are ~100k points, small enough that the convergence loop is
 dominated by per-iteration launch and transfer latency rather than arithmetic. A
 speedup measured only there understates the kernels.
 
+The bundled datasets have no cluster structure; they measure throughput, not
+clustering quality. They are also not quite uniform. In `points_3d.txt`, dimensions 2
+and 3 hold 99,968 distinct values, but dimension 1 draws from only 19,968 (the same
+value pool as `points_1d.txt`), and 288 of those values account for roughly 80% of all
+points. The interactive demo shows this as vertical banding. Timing is unaffected, since
+the arithmetic is identical either way.
+
 ## Regenerating the diagram
 
 The animated diagram in the top-level README is generated from the same algorithm:
