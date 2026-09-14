@@ -40,18 +40,9 @@ At K=2 it is 4–10× slower than sequential, and takes the same 0.17 s for 10,0
 as for 100,000. That is fixed cost: context creation, transfers, and a blocking copy
 each iteration. There is not enough arithmetic at K=2 to cover it.
 
-**Per-kernel bandwidth** (n=100,000, k=100, d=1, 128 threads/block):
-
-| Kernel | Read | Written | Time | Effective BW |
-|--------|------|---------|------|--------------|
-| `find_nearest_cluster`    | 801,400 B | 1,024,800 B | 0.24 ms | 6 GB/s\* |
-| `reduce_coord_clusters`   | 627,000 B | 800 B       | 0.18 ms | 3.48 GB/s |
-| `reduce_cluster_changed`  | 3,124 B   | 6,248 B     | 0.12 ms | 0.078 GB/s |
-
-`reduce_cluster_changed` runs as one thread block and takes 22% of the kernel time to
-move 0.5% of the bytes. Spreading it across blocks is the next improvement.
-
-\* Inconsistent with its own inputs, which give 7.61 GB/s. See
+In the 2015 per-kernel timings, `reduce_cluster_changed` took 22% of the kernel time to
+move 0.5% of the bytes. It runs as a single thread block. Spreading that reduction across
+blocks is the next improvement; the full breakdown is in
 [`presentation/BENCHMARKS.md`](presentation/BENCHMARKS.md).
 
 ## Design
