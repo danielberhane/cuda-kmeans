@@ -118,11 +118,6 @@ the full benchmark see [`bench/README.md`](bench/README.md).
 
 ## Credits
 
-Kernels, host driver and benchmark scripts: Daniel Berhane Araya. Original design note
-in [`presentation/kernel-design-notes.txt`](presentation/kernel-design-notes.txt).
-
-`cuda_io.cu`, `cuda_wtime.cu`, `kmeans.h` and the Makefile layout are adapted from the
-MIT-licensed Northwestern package by Wei-keng Liao and Serban Giuroiu, which also
-supplied the comparison baselines.
-
-MIT License. See [LICENSE](LICENSE).
+Baselines are from the Northwestern parallel k-means package by Wei-keng Liao and
+Serban Giuroiu, which also supplied the I/O utilities and header. MIT License, see
+[LICENSE](LICENSE).
