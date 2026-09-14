@@ -2,8 +2,8 @@
 
 K-means clustering in CUDA C. Three kernels per iteration, a two-stage reduction, and a
 single shared-memory buffer split into six regions. Written in 2015 for a graduate
-course in high-performance computing at Western University, and benchmarked against
-MPI, OpenMP and sequential implementations.
+HPC course at Western University, and benchmarked against MPI, OpenMP and sequential
+implementations.
 
 <p align="center">
   <img src="assets/pipeline.svg" width="880" alt="CUDA k-means execution model">
