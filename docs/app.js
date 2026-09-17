@@ -284,4 +284,4 @@ $('#scrub').addEventListener('input', (e) => {
 });
 addEventListener('resize', draw);
 
-worker.postMessage({ type: 'load', payload: { url: 'data/points_3d.bin' } });
+worker.postMessage({ type: 'load', payload: { url: 'data/points_3d.txt' } });

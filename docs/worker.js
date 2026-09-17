@@ -9,12 +9,22 @@ let benchmark = null;   // the real dataset, loaded once
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
+  // docs/data/points_3d.txt is a copy of data/points_3d.txt in the same
+  // "id x y z" text format the CUDA build reads, so the demo runs on exactly
+  // the input the benchmark did. Parsing 100k lines takes tens of
+  // milliseconds in a worker; a packed binary would save little and a
+  // .bin in the tree is what GitHub's spam scan objected to.
   if (type === 'load') {
     const res = await fetch(payload.url);
-    const buf = await res.arrayBuffer();
-    const N = new Int32Array(buf, 0, 1)[0];
-    const D = new Int32Array(buf, 4, 1)[0];
-    benchmark = { X: new Float32Array(buf, 8, N * D), N, D };
+    const lines = (await res.text()).trim().split('\n');
+    const N = lines.length;
+    const D = lines[0].trim().split(/\s+/).length - 1;   // first token is an id
+    const X = new Float32Array(N * D);
+    for (let i = 0; i < N; i++) {
+      const p = lines[i].trim().split(/\s+/);
+      for (let j = 0; j < D; j++) X[i * D + j] = +p[j + 1];
+    }
+    benchmark = { X, N, D };
     self.postMessage({ type: 'loaded', payload: { N, D } });
     return;
   }
