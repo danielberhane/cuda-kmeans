@@ -1,8 +1,9 @@
 # Benchmarks from the original 2015 presentation
 
-Transcribed from `k-means-cuda-2015.pptx` (Daniel Berhane, 3 May 2015, Western
-University, Department of Electrical and Computer Engineering). Figures extracted to
-`figures/`.
+Transcribed from the original slide deck (Daniel Berhane, 3 May 2015, Western
+University, Department of Electrical and Computer Engineering), attached to the
+[`slides-2015` release](https://github.com/danielberhane/cuda-kmeans/releases/tag/slides-2015)
+as `k-means-cuda-2015.pptx`. Figures extracted to `figures/`.
 
 The slides report figures only as charts -- the deck contains no embedded
 chart data, so the values below are read off the plots and are approximate
