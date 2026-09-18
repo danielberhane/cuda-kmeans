@@ -43,7 +43,8 @@ each iteration. There is not enough arithmetic at K=2 to cover it.
 In the 2015 per-kernel timings, `reduce_cluster_changed` took 22% of the kernel time to
 move 0.5% of the bytes. It runs as a single thread block. Spreading that reduction across
 blocks is the next improvement; the full breakdown is in
-[`presentation/BENCHMARKS.md`](presentation/BENCHMARKS.md).
+[`presentation/BENCHMARKS.md`](presentation/BENCHMARKS.md), transcribed from the original
+slides ([`slides-2015` release](https://github.com/danielberhane/cuda-kmeans/releases/tag/slides-2015)).
 
 ## Design
 
